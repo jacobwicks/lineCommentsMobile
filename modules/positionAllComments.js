@@ -1,69 +1,82 @@
 import { debounce } from './debounce.js';
+import { closeAllComments } from './closeComments.js';
 import { getBlockComments } from './getBlockComments.js';
+import { getCSSLineHeight } from './getCSSLineHeight.js';
 import { getOffsetLeft } from './getOffsetLeft.js';
 import { identifyInvalidCommentAssignments } from './identifyInvalidCommentAssignments.js';
+import { parseCommentIds } from './parseCommentIds.js';
 import { positionComment } from './positionComment.js';
 import { setupCodeBlocks } from './setupCodeBlocks.js';
 
 //finds all elements with the lineComment class
 //positions them next to their assigned code block and line number
-//if reposition is false, it's the first time, so it adds some interior elements to make content display correctly
-export const positionAllComments = reposition => {
-    const isMobile = true;
+//if setup is true, it's the first time, so it adds some interior elements to make content display correctly
+export const positionAllComments = ({
+    codeBlocks,
+    comments,
+    details,
+    isMobile,
+    setup,
+}) => {
     //wrapper is an element added by Jekyll
     const wrapper = document.getElementsByClassName('wrapper')[0];
     //we use the width of wrapper as the basis for calculating how wide to make the comments
-    const wrapperWidth = wrapper.offsetWidth;
+    const halfWrapperWidth = Math.floor(wrapper.offsetWidth * 0.5);
     //get the distance between the left side of the wrapper and the edge of the screen
     const wrapperLeft = getOffsetLeft(wrapper);
 
     //calculate commentWidth
-    //commentWidth will be reduced later if the screen width is narrow
-    let commentWidth =
-        wrapperWidth * 0.5 > wrapperLeft ? wrapperLeft : wrapperWidth * 0.5;
-
-    //get all lineComments from the document
-    //getElementsByClassName returns an HTMLCollection
-    //HTMLCollection is array-like, but is NOT a JavaScript Array
-    //use the spread operator to make it an array
-    const comments = [...document.getElementsByClassName('lineComment')];
-
-    //get the line number element for each code block
-    const codeBlocks = [...document.getElementsByClassName('lineno')];
+    // prettier-ignore
+    let commentWidth = isMobile
+    //on mobile, it's as wide as the post element created by jekyll
+    ? document.querySelector('.post-content, .e-content').offsetWidth
+    //on desktop, it's the greater of 1/2 the wrapper width or the whole left offset of the wrapper
+    //this will be reduced later if the screen width is very narrow
+    : halfWrapperWidth > wrapperLeft
+            ? wrapperLeft
+            : halfWrapperWidth;
 
     //first time through
-    if (!reposition) {
-        //set up the code blocks- add divs and ids to the line numbers
-        setupCodeBlocks({ codeBlocks, comments, isMobile });
+    if (setup) {
+        //parse the comment ids from JSON to block.#.line.# format
+        parseCommentIds(comments);
+
+        //set up the code blocks- translate named blocks,
+        //add divs and ids to the line numbers
+        //add event listeners to collapsible details elements that contain codeBlocks
+        setupCodeBlocks({ codeBlocks, comments, details, isMobile });
 
         //find all comments assigned to invalid block numbers
         identifyInvalidCommentAssignments({ codeBlocks, comments });
+
+        //if it's mobile, all the comments start out closed
+        isMobile && closeAllComments();
     }
 
     //get the value of CSS variable lineHeight
-    //this is computed in the .css file
-    //returns a string number followed by 'px', slice off the px
-    const lineHeight = parseInt(
-        getComputedStyle(document.body)
-            .getPropertyValue('line-height')
-            .slice(0, -2)
-    );
+    //this is computed by the .css processor
+    const lineHeight = getCSSLineHeight();
 
     // for each code block element with line numbers
     codeBlocks.forEach((codeBlock, blockIndex) => {
-        //find the td element that holds the code inside this code block
-        //jekyll generates this td element
-        const innerCodeElement = document.getElementsByClassName('code')[
-            blockIndex
-        ];
+        //if this codeBlock element
+        //is inside a details element
+        //then all comments in it should be hidden or open
+        let hidden;
 
-        //compute the style of the code element to get the width of the block
-        //on mobile, the comment container will be as wide as this code block
-        const codeBlockWidth = parseInt(
-            getComputedStyle(innerCodeElement).width.slice(0, -2)
-        );
+        //depending on whether the detail element is open or closed
+        if (details.some(detail => detail.contains(codeBlock))) {
+            //ancestors is an array of the detail element(s) that the codeBlock is in
+            const ancestors = details.filter(detail =>
+                detail.contains(codeBlock)
+            );
 
-        //filter all comments to find the comments that are supposed to go in this block
+            //if any details elements that contain the codeblock are closed,
+            //then the codeblock is hidden
+            hidden = ancestors.some(ancestor => !ancestor.open);
+        }
+
+        //get the comments that are supposed to go in this block
         const blockComments = getBlockComments({
             blockIndex,
             codeBlock,
@@ -71,13 +84,11 @@ export const positionAllComments = reposition => {
         });
 
         //get the left offset to position the comments horizontally
-        const leftOffset = isMobile
-            ? getOffsetLeft(innerCodeElement)
-            : getOffsetLeft(codeBlock);
+        const leftOffset = getOffsetLeft(codeBlock);
 
-        //commentWidth is used for the desktop layout, not used on mobile
+        //for the desktop layout
         //if comments are wider than the offset, they'll appear partially offscreen
-        if (commentWidth > leftOffset && leftOffset > 50) {
+        if (!isMobile && commentWidth > leftOffset && leftOffset > 50) {
             //set commentWidth to offset minus 50 to keep comment onscreen
             commentWidth = leftOffset - 50;
         }
@@ -86,9 +97,9 @@ export const positionAllComments = reposition => {
         blockComments.forEach(comment => {
             positionComment({
                 blockIndex,
-                codeBlockWidth,
                 comment,
                 commentWidth,
+                hidden,
                 isMobile,
                 leftOffset,
                 lineHeight,

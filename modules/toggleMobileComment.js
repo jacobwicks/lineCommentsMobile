@@ -1,27 +1,16 @@
-//finds a comment div in the document
-const findComment = ({ blockIndex, lineNumber }) => {
-    //generate the id of the target comment
-    const commentId = `block.${blockIndex}.line.${lineNumber}`;
+import { animatedCloseComment } from './animatedCloseComment.js';
+import { closeAllCommentsExcept } from './closeComments.js';
+import { openComment } from './openComment.js';
 
-    return document.getElementById(commentId);
-};
-
-export const toggleMobileComment = ({ blockIndex, lineNumber }) => {
-    //a mobile comment is toggled
-    const targetComment = findComment({ blockIndex, lineNumber });
-
+//toggles a mobile comment between open/visible and closed/hidden states
+export const toggleMobileComment = comment => {
     //all other comments should be closed
-    //find all comments and remove the 'open' class from them
-    const comments = [...document.getElementsByClassName('lineComment')];
-    comments.forEach(comment => comment.classList.remove(''));
-    //then, if the target comment is open
-    //close the target comment
+    closeAllCommentsExcept(comment);
 
-    //else, if the target comment is closed
-    //open the target comment
+    //style === 'none' means the comment is currently closed
+    //if the comment is closed, then it should Open
+    const shouldOpen = comment.style.display === 'none';
 
-    console.log(
-        `clicked block ${blockIndex} line ${lineNumber}`,
-        targetComment
-    );
+    //open or close the target comment
+    shouldOpen ? openComment(comment) : animatedCloseComment(comment);
 };
